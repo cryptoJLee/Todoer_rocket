@@ -3,10 +3,8 @@ use diesel::{
     r2d2::{ConnectionManager, Pool, PooledConnection},
 };
 
-// use actix_web::dev::Payload;
-// use actix_web::error::ErrorServiceUnavailable;
-// use actix_web::{Error, FromRequest, HttpRequest};
-// use futures::future::{err, ok, Ready};
+use rocket::http::Status;
+use rocket::request::{self, Outcome, Request, FromRequest};
 
 use lazy_static::lazy_static;
 
@@ -44,6 +42,22 @@ pub struct DB {
     pub connection: PooledConnection<ConnectionManager<PgConnection>>,
 }
 
+#[derive(Debug)]
+pub enum DBError {
+    Unavailable
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for DB {
+    type Error = DBError;
+
+    async fn from_request(_: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match DBCONNECTION.db_connection.get() {
+            Ok(connection) => Outcome::Success(DB{connection}),
+            Err(_) => Outcome::Failure((Status::BadRequest, DBError::Unavailable))
+        }
+    }
+}
 // impl FromRequest for DB {
 //     type Error = Error;
 //     type Future = Ready<Result<DB, Error>>;

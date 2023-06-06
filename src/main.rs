@@ -2,35 +2,39 @@
 #[macro_use] extern crate diesel;
 use diesel::prelude::*;
 
-use rocket::serde::json::Json;
+use rocket::http::Header;
+use rocket::{Request, Response};
+use rocket::fairing::{Fairing, Info, Kind};
 
 mod schema;
 mod database;
 mod json_serialization;
 mod models;
 mod to_do;
+mod jwt;
 mod config;
+mod views;
 
-use crate::models::item::item::Item;
-use crate::json_serialization::to_do_items::TodoItems;
-use crate::models::item::new_item::NewItem;
-use database::DBCONNECTION;
+use views::auth::{login::login, login::login_get, logout::logout};
+use views::to_do::{create::create, delete::delete, edit::edit, get::get};
+use views::users::create::create_user;
 
-#[post("/create/<title>")]
-fn item_create(title: String) -> Json<TodoItems> {
-    let db = DBCONNECTION.db_connection.get().unwrap();
-    let items = schema::to_do::table
-        .filter(schema::to_do::columns::title.eq(&title.as_str()))
-        .order(schema::to_do::columns::id.asc())
-        .load::<Item>(&db)
-        .unwrap();
-    if items.len() == 0 {
-        let new_post = NewItem::new(title, 1);
-        let _ = diesel::insert_into(schema::to_do::table)
-            .values(&new_post)
-            .execute(&db);
+pub struct CORS;
+
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response
+        }
     }
-    Json(TodoItems::get_state(1))
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Methods", "POST, GET, PATCH, OPTIONS"));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
 }
 
 #[get("/")]
@@ -41,5 +45,9 @@ fn index() -> &'static str {
 #[launch]
 fn rocket() -> _ {
     rocket::build().mount("/", routes![index])
-        .mount("/v1/item", routes![item_create])
+                    .mount("/v1/item/", routes![create, delete, get, edit])
+                    .mount("/v1/auth/", routes![login, login_get, logout])
+                    .mount("/v1/user/", routes![create_user])
+                    .attach(CORS)
+                    .manage(CORS)
 }
